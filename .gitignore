@@ -1,0 +1,28 @@
+# Never upload these to GitHub
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ChromaDB data
+vectorstore/
+
+# Uploaded files
+data/uploads/
+
+# Test files
+test_openai.py
+installed.txt
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
