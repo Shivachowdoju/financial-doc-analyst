@@ -12,7 +12,7 @@ if uploaded_file:
     with st.spinner("Ingesting document..."):
         response = requests.post(
             f"{API_URL}/upload",
-            files={"file": uploaded_file.getvalue()}
+            files={"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
         )
     if response.status_code == 200:
         st.success(response.json()["message"])
