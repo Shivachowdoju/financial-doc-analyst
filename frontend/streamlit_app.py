@@ -20,9 +20,13 @@ Context: {context}
 Question: {question}
 Answer:"""
 
+# Create ONE shared client at app level
+if "chroma_client" not in st.session_state:
+    st.session_state.chroma_client = chromadb.EphemeralClient()
+
 @st.cache_resource
-def process_document(uploaded_file):
-    # Step 1: Extract text from PDF
+def process_document(uploaded_file, _client):
+    # Step 1: Extract text
     reader = PdfReader(uploaded_file)
     text = ""
     for page in reader.pages:
@@ -39,13 +43,13 @@ def process_document(uploaded_file):
     )
     chunks = splitter.split_text(text)
 
-    # Step 3: Create embeddings and store in memory
+    # Step 3: Create embeddings using shared client
     embeddings = OpenAIEmbeddings()
-    client = chromadb.EphemeralClient()
     vectorstore = Chroma.from_texts(
         chunks,
         embeddings,
-        client=client
+        client=_client,
+        collection_name="financial_docs"
     )
     return vectorstore, len(chunks)
 
@@ -55,7 +59,10 @@ uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
 if uploaded_file:
     with st.spinner("Processing document..."):
         try:
-            vectorstore, count = process_document(uploaded_file)
+            vectorstore, count = process_document(
+                uploaded_file,
+                st.session_state.chroma_client
+            )
             st.session_state.vectorstore = vectorstore
             st.success(f"Successfully ingested {count} chunks!")
         except Exception as e:
@@ -88,6 +95,8 @@ if st.button("Get Answer") and question:
                 st.write(result["result"])
                 with st.expander("Source Passages"):
                     for i, doc in enumerate(result["source_documents"]):
-                        st.markdown(f"**Source {i+1}:** {doc.page_content[:200]}")
+                        st.markdown(
+                            f"**Source {i+1}:** {doc.page_content[:200]}"
+                        )
             except Exception as e:
                 st.error(f"Error getting answer: {str(e)}")
