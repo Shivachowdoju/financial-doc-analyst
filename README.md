@@ -101,3 +101,6 @@ financial-doc-analyst/
 
 Built as part of a 100-day Gen AI Engineering journey.
 
+## 🌐 Live Demo
+👉 **[Try the app here](https://financial-doc-analyst-8sa8njpaqkry3olecf9wbo.streamlit.app)**
+
