@@ -20,55 +20,44 @@ Context: {context}
 Question: {question}
 Answer:"""
 
-# Create ONE shared client at app level
-if "chroma_client" not in st.session_state:
-    st.session_state.chroma_client = chromadb.EphemeralClient()
-
-@st.cache_resource
-def process_document(uploaded_file, _client):
-    # Step 1: Extract text
+def process_document(uploaded_file):
     reader = PdfReader(uploaded_file)
     text = ""
     for page in reader.pages:
         text += page.extract_text() or ""
-
     if not text.strip():
         raise ValueError("No text could be extracted from this PDF")
-
-    # Step 2: Split into chunks
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50,
         separators=["\n\n", "\n", " ", ""]
     )
     chunks = splitter.split_text(text)
-
-    # Step 3: Create embeddings using shared client
     embeddings = OpenAIEmbeddings()
+    client = chromadb.EphemeralClient()
     vectorstore = Chroma.from_texts(
         chunks,
         embeddings,
-        client=_client,
+        client=client,
         collection_name="financial_docs"
     )
     return vectorstore, len(chunks)
 
-# File uploader
 uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
 
-if uploaded_file:
-    with st.spinner("Processing document..."):
-        try:
-            vectorstore, count = process_document(
-                uploaded_file,
-                st.session_state.chroma_client
-            )
-            st.session_state.vectorstore = vectorstore
-            st.success(f"Successfully ingested {count} chunks!")
-        except Exception as e:
-            st.error(f"Error processing PDF: {str(e)}")
+if uploaded_file is not None:
+    if "processed_file" not in st.session_state or \
+       st.session_state.processed_file != uploaded_file.name:
+        with st.spinner("Processing document..."):
+            try:
+                vectorstore, count = process_document(uploaded_file)
+                st.session_state.vectorstore = vectorstore
+                st.session_state.processed_file = uploaded_file.name
+                st.session_state.chunk_count = count
+            except Exception as e:
+                st.error(f"Error processing PDF: {str(e)}")
+    st.success(f"Successfully ingested {st.session_state.chunk_count} chunks!")
 
-# Question input
 question = st.text_input("Ask a question about this document")
 
 if st.button("Get Answer") and question:
