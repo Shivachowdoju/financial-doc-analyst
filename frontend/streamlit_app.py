@@ -1,4 +1,5 @@
 import streamlit as st
+import chromadb
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
@@ -13,6 +14,7 @@ PROMPT_TEMPLATE = """
 You are a financial analyst assistant.
 Use only the context below to answer the question.
 If the answer is not in the context, say 'I cannot find this in the document.'
+Always cite which part of the document your answer comes from.
 
 Context: {context}
 Question: {question}
@@ -20,26 +22,46 @@ Answer:"""
 
 @st.cache_resource
 def process_document(uploaded_file):
+    # Step 1: Extract text from PDF
     reader = PdfReader(uploaded_file)
     text = ""
     for page in reader.pages:
         text += page.extract_text() or ""
+
+    if not text.strip():
+        raise ValueError("No text could be extracted from this PDF")
+
+    # Step 2: Split into chunks
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500, chunk_overlap=50
+        chunk_size=500,
+        chunk_overlap=50,
+        separators=["\n\n", "\n", " ", ""]
     )
     chunks = splitter.split_text(text)
+
+    # Step 3: Create embeddings and store in memory
     embeddings = OpenAIEmbeddings()
-    vectorstore = Chroma.from_texts(chunks, embeddings)
+    client = chromadb.EphemeralClient()
+    vectorstore = Chroma.from_texts(
+        chunks,
+        embeddings,
+        client=client
+    )
     return vectorstore, len(chunks)
 
+# File uploader
 uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
 
 if uploaded_file:
     with st.spinner("Processing document..."):
-        vectorstore, count = process_document(uploaded_file)
-    st.success(f"Ingested {count} chunks successfully!")
-    st.session_state.vectorstore = vectorstore
+        try:
+            vectorstore, count = process_document(uploaded_file)
+            st.session_state.vectorstore = vectorstore
+            st.success(f"Successfully ingested {count} chunks!")
+        except Exception as e:
+            st.error(f"Error processing PDF: {str(e)}")
 
+# Question input
 question = st.text_input("Ask a question about this document")
 
 if st.button("Get Answer") and question:
@@ -47,23 +69,25 @@ if st.button("Get Answer") and question:
         st.error("Please upload a PDF first!")
     else:
         with st.spinner("Thinking..."):
-            llm = ChatOpenAI(model="gpt-4", temperature=0)
-            prompt = PromptTemplate(
-                template=PROMPT_TEMPLATE,
-                input_variables=["context", "question"]
-            )
-            chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                retriever=st.session_state.vectorstore.as_retriever(
-                    search_kwargs={"k": 3}
-                ),
-                chain_type_kwargs={"prompt": prompt},
-                return_source_documents=True
-            )
-            result = chain({"query": question})
-        st.subheader("Answer")
-        st.write(result["result"])
-        with st.expander("Source Passages"):
-            for i, doc in enumerate(result["source_documents"]):
-                st.markdown(f"**Source {i+1}:** {doc.page_content[:200]}")
-
+            try:
+                llm = ChatOpenAI(model="gpt-4", temperature=0)
+                prompt = PromptTemplate(
+                    template=PROMPT_TEMPLATE,
+                    input_variables=["context", "question"]
+                )
+                chain = RetrievalQA.from_chain_type(
+                    llm=llm,
+                    retriever=st.session_state.vectorstore.as_retriever(
+                        search_kwargs={"k": 3}
+                    ),
+                    chain_type_kwargs={"prompt": prompt},
+                    return_source_documents=True
+                )
+                result = chain({"query": question})
+                st.subheader("Answer")
+                st.write(result["result"])
+                with st.expander("Source Passages"):
+                    for i, doc in enumerate(result["source_documents"]):
+                        st.markdown(f"**Source {i+1}:** {doc.page_content[:200]}")
+            except Exception as e:
+                st.error(f"Error getting answer: {str(e)}")
